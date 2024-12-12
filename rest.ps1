@@ -112,14 +112,14 @@ $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None  # 可选，防
                 #$form.MaximizeBox = $false  # 禁止最大化
 
 # 禁用 Alt + F4
-$form.Add_KeyDown({
-    if ($_.Alt -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F4) {
-        $_.Handled = $true  # 禁用 Alt+F4 关闭窗口
-    }
-    if ($_.Alt -and ($_.KeyCode -eq [System.Windows.Forms.Keys]::Tab -or $_.KeyCode -eq [System.Windows.Forms.Keys]::Escape)) {
-        $_.Handled = $true  # 禁用 Alt+Tab 和 Alt+Esc
-    }
-})
+#$form.Add_KeyDown({
+#    if ($_.Alt -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F4) {
+#       $_.Handled = $true  # 禁用 Alt+F4 关闭窗口
+#    }
+#    if ($_.Alt -and ($_.KeyCode -eq [System.Windows.Forms.Keys]::Tab -or $_.KeyCode -eq [System.Windows.Forms.Keys]::Escape)) {
+#        $_.Handled = $true  # 禁用 Alt+Tab 和 Alt+Esc
+#    }
+#})
 
 
 # 创建标签控件用于显示倒计时
@@ -132,7 +132,7 @@ $form.Add_KeyDown({
 	$form.Controls.Add($label)
 
 # 初始化倒计时的秒数（2分钟 = 120秒）
-	$script:timeRemaining = 200
+	$script:timeRemaining = 180
 # 创建计时器对象，用于更新倒计时
 	$timer = New-Object System.Windows.Forms.Timer
 	$timer.Interval = 1000  # 每秒钟触发一次
@@ -146,6 +146,8 @@ $form.Add_KeyDown({
 	    # 如果倒计时结束，停止计时器并关闭窗体
 	    if ($script:timeRemaining -le 0) {
 	   	$timer.Stop()  # 停止计时器
+# 释放定时器资源
+$timer.Dispose()
 	   	$form.Close()  # 关闭窗体
 	    }
                  })
@@ -160,13 +162,22 @@ $form.ShowDialog()
 
 }
 
-    # 每小时执行一次
-    while ($true) {
-        Write-Host "开始休息3分钟……"
-        # 调用函数显示倒计时窗体
-        Show-CountdownForm
- 
-       # 暂停1小时（3600秒）
-       Write-Host "开始工作50分钟……"
-        Start-Sleep -Seconds 3000
-    }
+
+$allt = 0
+   
+# 保持脚本运行的阻塞循环
+while ($true) {
+
+	    if ($allt % 10 -eq 0) {
+Get-Date
+  
+  Write-Host "Start resting for 3 minutes......"
+	   	Show-CountdownForm
+Write-Host "Start working for 50 minutes......"
+	    }
+Get-Date
+  
+                     $allt += 1
+  Start-Sleep -Seconds 300
+}
+
