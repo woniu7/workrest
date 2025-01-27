@@ -1,1 +1,3 @@
-Have a rest every 50 minute at work!
+Have a rest every 40 minute at work!
+
+cl rest.c
