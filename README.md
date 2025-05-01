@@ -1,3 +1,7 @@
-Have a rest every 40 minute at work!
+Have a 5-minute break every 45 minutes at work!
 
-cl rest.c
+![Screenshot](images/screenshot.png)
+
+
+- Press r: Continue to work(delay to rest) for 2 minutes
+- Press q: Kill process.
