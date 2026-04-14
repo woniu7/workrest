@@ -8,7 +8,7 @@ GTK_LFLAGS := $(shell pkg-config --libs gtk4)
 #CFLAGS = -Wall -O2
 CFLAGS ?=
 
-SRC := rest.c
+SRC := main.c
 OBJ := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRC))
 TARGET = $(BUILD_DIR)/rest
 
