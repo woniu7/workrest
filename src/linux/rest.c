@@ -1,7 +1,7 @@
+#include "../rest.h"
 #include <gtk/gtk.h>
 #include <glib.h>
 
-// 配置常量
 #define WORK_SECONDS 2700
 #define BREAK_SECONDS 180
 #define INIT_SECONDS 3
@@ -155,7 +155,7 @@ static void activate(GtkApplication *app_instance, gpointer user_data) {
     start_rest(app, INIT_SECONDS);
 }
 
-int main(int argc, char **argv) {
+int app_main(int argc, char **argv) {
     GtkApplication *app_instance;
     int status;
     AppContext app_ctx = {0};
