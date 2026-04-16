@@ -13,6 +13,11 @@ TARGET = rest.o
 
 all: $(TARGET)
 
+## 链接
+#$(TARGET): $(OBJ)
+#       @mkdir -p $(dir $@)
+#       $(CC) $(GTK_LFLAGS) $(addprefix $(BUILD_DIR)/, $^) -o $(BUILD_DIR)/$@
+
 %.o: %.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(GTK_CFLAGS) -c $< -o $(BUILD_DIR)/$@

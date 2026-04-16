@@ -9,7 +9,10 @@ SRC_DIR     := . $(PLATFORM)
 BUILD_DIR   ?= build/$(PLATFORM)
 
 SRCS        := $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.c))
-OBJS        := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
+# 去掉 ./ 前缀
+SRCS        := $(patsubst ./%,%,$(SRCS))
+
+OBJS        := $(patsubst %.c,%.o,$(SRCS))
 
 
 # =========================
@@ -49,7 +52,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+	$(CC) $(addprefix $(BUILD_DIR)/, $^) -o $(BUILD_DIR)/$@ $(LDFLAGS)
 
 %.o: %.c
 	@mkdir -p $(BUILD_DIR)/$(dir $@)
@@ -59,7 +62,7 @@ $(TARGET): $(OBJS)
 # 清理
 # =========================
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET)
+	rm -rf $(BUILD_DIR) 
 
 # =========================
 # 打印配置（调试用）
