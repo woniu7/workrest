@@ -2,10 +2,6 @@
 #include <gtk/gtk.h>
 #include <glib.h>
 
-#define WORK_SECONDS 2700
-#define BREAK_SECONDS 180
-#define INIT_SECONDS 3
-
 typedef struct {
     GtkWidget *window;
     GtkWidget *label;

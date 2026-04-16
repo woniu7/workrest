@@ -1,31 +1,69 @@
+# 默认平台
 PLATFORM ?= linux
-BUILD_DIR ?= $(CURDIR)/build/$(PLATFORM)
 
--SRC := main.c
-+SRC := rest.c
- OBJ := $(patsubst %.c,%.o,$(SRC))
--TARGET = rest
-+TARGET = rest.o
+# =========================
+# 可配置参数
+# =========================
+TARGET      ?= rest
+SRC_DIR     := . $(PLATFORM)
+BUILD_DIR   ?= build/$(PLATFORM)
 
- all: $(TARGET)
+SRCS        := $(foreach dir,$(SRC_DIR),$(wildcard $(dir)/*.c))
+OBJS        := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
 
--# 链接
--$(TARGET): $(OBJ)
--       @mkdir -p $(dir $@)
--       $(CC) $(GTK_LFLAGS) $(addprefix $(BUILD_DIR)/, $^) -o $(BUILD_DIR)/$@
--
--# 编译
- %.o: %.c
--       @mkdir -p $(dir $@)
-+       @mkdir -p $(BUILD_DIR)
-        $(CC) $(CFLAGS) $(GTK_CFLAGS) -c $< -o $(BUILD_DIR)/$@
 
-all: #just for default target
-	$(MAKE) -C $(PLATFORM) BUILD_DIR=$(BUILD_DIR) $@
+# =========================
+# 不同平台配置
+# =========================
+ifeq ($(PLATFORM), linux)
+    CC      := gcc
+    CFLAGS  ?= -Wall -O2 $(shell pkg-config --cflags gtk4)
+    LDFLAGS := $(shell pkg-config --libs gtk4)
+endif
 
-%: #not working for default without target
-	$(MAKE) -C $(PLATFORM) BUILD_DIR=$(BUILD_DIR) $@
-%.o: #match *.o while the % does not match
-	$(MAKE) -C $(PLATFORM) BUILD_DIR=$(BUILD_DIR) $@
+ifeq ($(PLATFORM), arm)
+    CC      := arm-linux-gnueabihf-gcc
+    CFLAGS  ?= -Wall -O2
+    LDFLAGS :=
+endif
 
-.PHONY: all %
+ifeq ($(PLATFORM), aarch64)
+    CC      := aarch64-linux-gnu-gcc
+    CFLAGS  ?= -Wall -O2
+    LDFLAGS :=
+endif
+
+ifeq ($(PLATFORM), windows)
+    CC      := x86_64-w64-mingw32-gcc
+    CFLAGS  ?= -Wall -O2
+    LDFLAGS := -lgdi32 -luser32 -lwtsapi32
+    TARGET  := $(TARGET).exe
+endif
+
+CFLAGS  += $(EXTRA_CFLAGS)
+
+# =========================
+# 构建规则
+# =========================
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $^ -o $(BUILD_DIR)/$@ $(LDFLAGS)
+
+%.o: %.c
+	@mkdir -p $(BUILD_DIR)/$(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $(BUILD_DIR)/$@
+
+# =========================
+# 清理
+# =========================
+clean:
+	rm -rf $(BUILD_DIR) $(TARGET)
+
+# =========================
+# 打印配置（调试用）
+# =========================
+info:
+	@echo "Platform: $(PLATFORM)"
+	@echo "Compiler: $(CC)"
