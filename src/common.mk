@@ -5,7 +5,7 @@
 # =========================
 
 TARGET     ?= rest
-VIEW       ?= terminal
+VIEW       ?= gui
 BUILD_DIR  ?= build
 
 # 公共源码所在目录(即 src/)

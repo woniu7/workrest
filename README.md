@@ -15,13 +15,13 @@ Keys are case-insensitive, and are ignored for a short delay right after a count
 ## Build
 
 ```sh
-make                     # linux, terminal view (default) -> build/linux/
+make                     # linux, gui view (default) -> build/linux/
 make PLATFORM=windows    # cross-compile for windows -> rest.exe
-make VIEW=gui            # linux with the GTK4 gui view
+make VIEW=terminal       # linux with the terminal view
 make clean
 ```
 
 - `PLATFORM`: `linux` (default) / `windows`
-- `VIEW`: `terminal` (default) / `gui`
+- `VIEW`: `gui` (default) / `terminal`
 
 You can also build a platform directly under its dir, e.g. `cd src/linux && make`.

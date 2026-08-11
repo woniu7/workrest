@@ -1,6 +1,6 @@
 # linux 平台配置。可在本目录直接 make。
 PLATFORM := linux
-VIEW     ?= terminal
+VIEW     ?= gui
 
 CC := gcc
 
