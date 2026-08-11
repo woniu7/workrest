@@ -1,32 +1,27 @@
-#include "terminal.h"
-#include <windows.h>
-#include <conio.h>
-#include <process.h>
+// 终端视图实现(无 GUI)：把倒计时打印到终端模拟显示。
+// 键盘监听已独立到 keyboard.c，由核心统一启动，这里只负责显示。
+#include "../view.h"
+#include "../rest.h"
+#include <stdio.h>
 
-// 按键回调及其用户数据
-static TerminalKeyCallback g_callback = NULL;
-static void *g_user_data = NULL;
-
-// 终端(控制台)按键监听线程：每读到一个按键就回调
-static unsigned __stdcall console_input_thread(void *arg) {
-    (void)arg;
-    while (1) {
-        int ch = _getch();
-        if (g_callback) {
-            g_callback((char)ch, g_user_data);
-        }
-    }
-    return 0;
+void view_init(RestCore *core) {
+    (void)core; // 输入由 keyboard.c 负责，这里无需处理
 }
 
-void terminal_start_listen(TerminalKeyCallback callback, void *user_data) {
-    uintptr_t th;
+void view_rest_begin(int seconds) {
+    printf("\n===== 休息开始，倒计时 %d 秒（q 退出 / r 推迟 / c 继续工作 / l 置 999999 / b 重置）=====\n", seconds);
+    fflush(stdout);
+}
 
-    g_callback = callback;
-    g_user_data = user_data;
+void view_tick(int seconds) {
+    printf("\r  倒计时: %-8d", seconds); // \r 原地刷新，模拟大数字显示
+    fflush(stdout);
+}
 
-    th = _beginthreadex(NULL, 0, console_input_thread, NULL, 0, NULL);
-    if (th != 0) {
-        CloseHandle((HANDLE)th);
-    }
+void view_work_begin(void) {
+    printf("\n===== 进入工作模式，界面隐藏 =====\n");
+    fflush(stdout);
+}
+
+void view_destroy(void) {
 }

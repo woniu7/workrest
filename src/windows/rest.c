@@ -1,251 +1,255 @@
 #include "../rest.h"
-#include "terminal.h"
+#include "../view.h"
+#include "../keyboard.h"
 #include <windows.h>
-#include <stdio.h>
-#include <tchar.h>
 #include <wtsapi32.h>
-//#pragma comment(lib, "user32.lib") // 显式链接 user32.lib
-//#pragma comment(lib, "gdi32.lib")  // 显式链接 gdi32.lib
-//#pragma comment(lib, "wtsapi32.lib")
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
-#define ID_TIMER_REST 1  // 休息倒计时, 用于休息倒计时
-#define ID_TIMER_WORK_END 2  // 工作计时器，用于等待工作时间
-#define ID_TIMER_ENABLE_KEYS 3  // 延迟启用按键监听
+#define ID_TIMER_REST        1  // 休息倒计时(每秒)
+#define ID_TIMER_WORK        2  // 工作计时(单次)
+#define ID_TIMER_ENABLE_KEYS 3  // 延迟启用按键(单次)
+#define WM_APP_KEY (WM_APP + 1) // 送入按键：wParam = 字符
 
-#define WM_APP_SUMMON_REST (WM_APP + 1)  // 终端按 c 唤起倒计时
+// 核心状态机(不依赖可见 UI；用隐藏消息窗口承载定时器与消息)
+struct RestCore {
+    Options opts;
+    HWND    hwnd;           // 隐藏消息窗口
+    int     remaining_seconds;
+    BOOL    is_resting;     // TRUE = 休息中, FALSE = 工作中
+    BOOL    keys_enabled;   // FALSE = 延迟期内忽略按键
+};
 
-// 倒计时开始后的延迟期内忽略按键，防止误触
-static BOOL g_keysEnabled = FALSE;
+// --- 调试日志(--debug，默认开启)，输出到 stderr ---
+static void rest_log(RestCore *c, const char *fmt, ...) {
+    va_list ap;
+    if (!c->opts.debug) return;
+    va_start(ap, fmt);
+    fprintf(stderr, "[debug] ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    va_end(ap);
+    fflush(stderr);
+}
 
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+// --- 通知视图(直接调用 view_*，链接期已确定是哪一种实现) ---
+static void notify_rest_begin(RestCore *c, int seconds) {
+    rest_log(c, "进入休息，倒计时 %d 秒", seconds);
+    view_rest_begin(seconds);
+}
+static void notify_tick(RestCore *c, int seconds) {
+    view_tick(seconds);
+}
+static void notify_work_begin(RestCore *c) {
+    rest_log(c, "进入工作模式");
+    view_work_begin();
+}
 
-// 终端按键回调(在监听线程中执行)：c 唤起倒计时，q 退出程序。
-// 通过 PostMessage 投递到窗口线程，保证线程安全。
-static void on_terminal_key(char key, void *user_data) {
-    HWND hwnd = (HWND)user_data;
-    if (key == 'c' || key == 'C') {
-        PostMessage(hwnd, WM_APP_SUMMON_REST, 0, 0);
-    } else if (key == 'q' || key == 'Q') {
-        PostMessage(hwnd, WM_CLOSE, 0, 0);
+// --- 状态机(前向声明) ---
+static void start_rest(RestCore *c, int seconds);
+static void start_work(RestCore *c, int seconds);
+
+// 休息倒计时每秒触发
+static void core_tick(RestCore *c) {
+    c->remaining_seconds--;
+    notify_tick(c, c->remaining_seconds);
+    if (c->remaining_seconds <= 0) {
+        start_work(c, WORK_SECONDS);
     }
 }
 
-int HaveARest(HWND hwnd, int restSecond);
-int HaveAWork(HWND hwnd, int workSecond);
+// 开始休息(显示界面并倒计时)
+static void start_rest(RestCore *c, int seconds) {
+    KillTimer(c->hwnd, ID_TIMER_WORK);
+    KillTimer(c->hwnd, ID_TIMER_REST);
+    KillTimer(c->hwnd, ID_TIMER_ENABLE_KEYS);
 
-LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-	static HFONT hFont = NULL; // 字体句柄
+    c->is_resting = TRUE;
+    c->remaining_seconds = seconds;
 
-	switch (message) {
-		case WM_CREATE:
-			// 创建一个大字体
-			hFont = CreateFont(200, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-					OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-					VARIABLE_PITCH, _T("Arial"));
+    // 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
+    c->keys_enabled = FALSE;
+    SetTimer(c->hwnd, ID_TIMER_ENABLE_KEYS, DELAY_SECONDS * 1000, NULL);
 
-			HaveARest(hwnd, INIT_SECONDS);
-			return 0;
-
-		case WM_TIMER:
-			if (wParam == ID_TIMER_REST) {
-				// restCount秒倒计时
-				int count = (int)GetWindowLongPtr(hwnd, GWLP_USERDATA);  
-				count--;
-				SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)count);  
-				if (count <= 0) {
-					//倒计时结束，开始工作
-					HaveAWork(hwnd, WORK_SECONDS);
-				} else {
-					//发送WM_PAINT给hwnd
-					InvalidateRect(hwnd, NULL, TRUE); // 触发重绘
-				}
-			} else if (wParam == ID_TIMER_WORK_END) {
-				//工作结束, 开始休息
-				HaveARest(hwnd, BREAK_SECONDS);
-			} else if (wParam == ID_TIMER_ENABLE_KEYS) {
-				// 延迟结束，启用按键监听
-				g_keysEnabled = TRUE;
-				KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
-			}
-			return 0;
-		case WM_APP_SUMMON_REST:
-			// 终端按 r：立即唤起休息倒计时
-			KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
-			KillTimer(hwnd, ID_TIMER_REST);      // 先取消之前的定时器
-			HaveARest(hwnd, BREAK_SECONDS);
-			return 0;
-
-		case WM_WTSSESSION_CHANGE:
-			if (wParam == WTS_SESSION_UNLOCK) {
-				printf("User has unlocked the computer.\n");
-				KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
-				KillTimer(hwnd, ID_TIMER_REST);  // 先取消之前的定时器
-				HaveARest(hwnd, INIT_SECONDS);
-				return 0;
-			}
-			break;
-
-		case WM_PAINT:
-			HDC hdc;
-			PAINTSTRUCT ps;
-			RECT rect;
-			TCHAR szBuffer[10];
-			hdc = BeginPaint(hwnd, &ps);
-			GetClientRect(hwnd, &rect);
-
-			// 选择字体
-			if (hFont) {
-				SelectObject(hdc, hFont);
-			}
-
-			// 设置文本颜色为白色
-			SetTextColor(hdc, RGB(255, 255, 255));
-			SetBkMode(hdc, TRANSPARENT); // 背景透明
-
-			int count = (int)GetWindowLongPtr(hwnd, GWLP_USERDATA);  
-			// 绘制倒计时数字
-			wsprintf(szBuffer, _T("%d"), count);
-			DrawText(hdc, szBuffer, -1, &rect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
-
-			EndPaint(hwnd, &ps);
-			return 0;
-
-		//case WM_SYSCOMMAND:
-		//	// 拦截系统命令，防止窗口被恢复
-		//	if (wParam == SC_RESTORE || wParam == SC_MAXIMIZE) {
-		//		return 0; // 阻止窗口恢复或最大化
-		//	}
-		//	break;
-
-		case WM_DESTROY:
-			if (hFont) {
-				DeleteObject(hFont); // 删除字体对象
-			}
-			// 停止所有定时器
-			KillTimer(hwnd, ID_TIMER_REST);
-			KillTimer(hwnd, ID_TIMER_WORK_END);
-			KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
-			PostQuitMessage(0);
-			return 0;
-		case WM_KEYDOWN:
-			// 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
-			if (!g_keysEnabled) return 0;
-			switch (wParam)
-			{
-				// q关闭
-				case 0x51:
-					PostQuitMessage(0);
-					break;
-				// r 推迟2分钟
-				case 0x52:
-					KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
-					KillTimer(hwnd, ID_TIMER_REST);  // 先取消之前的定时器
-					HaveAWork(hwnd, POSTPONE_SECONDS);
-					break;
-				// L 直接把倒计时设为 999999
-				case 0x4C:
-					SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)999999);
-					InvalidateRect(hwnd, NULL, TRUE); // 触发重绘
-					break;
-				default:
-					break;
-			}
-	}
-
-	return DefWindowProc(hwnd, message, wParam, lParam);
+    notify_rest_begin(c, seconds);
+    SetTimer(c->hwnd, ID_TIMER_REST, 1000, NULL);
 }
 
+// 开始工作(隐藏界面，seconds 秒后进入休息)
+static void start_work(RestCore *c, int seconds) {
+    KillTimer(c->hwnd, ID_TIMER_REST);
+    KillTimer(c->hwnd, ID_TIMER_WORK);
+    KillTimer(c->hwnd, ID_TIMER_ENABLE_KEYS);
 
-int HaveARest(HWND hwnd, int restSecond) {
-	SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)restSecond);
-	// 等待结束，停止工作定时器
-	KillTimer(hwnd, ID_TIMER_WORK_END);
-	//显示窗口，并将其最大化。 (窗口变化，会触发WM_PAINT)
-	ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-	SetFocus(hwnd);
-
-	// 启动休息定时器, 开始倒计时
-	SetTimer(hwnd, ID_TIMER_REST, 1000, NULL);
-
-	// 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
-	g_keysEnabled = FALSE;
-	SetTimer(hwnd, ID_TIMER_ENABLE_KEYS, DELAY_SECONDS * 1000, NULL);
-	return 0;
+    c->is_resting = FALSE;
+    notify_work_begin(c);
+    SetTimer(c->hwnd, ID_TIMER_WORK, seconds * 1000, NULL);
 }
 
-int HaveAWork(HWND hwnd, int workSecond) {
-	// 倒计时结束，停止休息计时器
-	KillTimer(hwnd, ID_TIMER_REST);
-	KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
-	// 最小化窗口
-	//ShowWindow(hwnd, SW_MINIMIZE);
-	// 隐藏任务栏图标
-	ShowWindow(hwnd, SW_HIDE);
+// 按键分发(按键语义以当前 UI 为准：q/r/c/l)
+static void dispatch_key(RestCore *c, char key) {
+    // 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
+    if (!c->keys_enabled) return;
 
-	// workSecond秒后发送ID_TIMER_WORK_END定时器消息
-	SetTimer(hwnd, ID_TIMER_WORK_END, workSecond*1000, NULL);
-	return 0;
+    switch (key) {
+        case 'q':
+        case 'Q':
+            rest_log(c, "按键 q：退出");
+            PostQuitMessage(0);
+            break;
+        case 'r':
+        case 'R':
+            rest_log(c, "按键 r：推迟工作 %d 秒", POSTPONE_SECONDS);
+            start_work(c, POSTPONE_SECONDS);
+            break;
+        case 'c':
+        case 'C':
+            rest_log(c, "按键 c：立即继续工作");
+            start_work(c, WORK_SECONDS);
+            break;
+        case 'l':
+        case 'L':
+            rest_log(c, "按键 l：倒计时设为 999999");
+            c->remaining_seconds = 999999;
+            notify_tick(c, c->remaining_seconds);
+            break;
+        case 'b':
+        case 'B':
+            // 立即触发休息倒计时；若已在倒计时中则重置为 BREAK_SECONDS
+            rest_log(c, "按键 b：触发/重置倒计时 %d 秒", BREAK_SECONDS);
+            start_rest(c, BREAK_SECONDS);
+            break;
+        default:
+            break;
+    }
 }
 
-int app_main(int argc, char **argv) {
-    printf("main\n");
+// 隐藏消息窗口的窗口过程：承载定时器、按键投递、会话变化
+static LRESULT CALLBACK core_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    RestCore *c = (RestCore *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
-    static TCHAR szAppName[] = _T("Have a break");
-    HWND hwnd;
+    switch (msg) {
+        case WM_TIMER:
+            if (!c) break;
+            if (wp == ID_TIMER_REST) {
+                core_tick(c);
+            } else if (wp == ID_TIMER_WORK) {
+                start_rest(c, BREAK_SECONDS);
+            } else if (wp == ID_TIMER_ENABLE_KEYS) {
+                c->keys_enabled = TRUE;
+                KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
+                rest_log(c, "按键已启用");
+            }
+            return 0;
+
+        case WM_APP_KEY:
+            if (c) dispatch_key(c, (char)wp);
+            return 0;
+
+        case WM_WTSSESSION_CHANGE:
+            if (c && wp == WTS_SESSION_UNLOCK) {
+                rest_log(c, "会话解锁，重新进入休息");
+                start_rest(c, INIT_SECONDS);
+            }
+            return 0;
+    }
+    return DefWindowProc(hwnd, msg, wp, lp);
+}
+
+// 注册隐藏窗口类(只需一次)
+static void register_core_class(void) {
+    static BOOL registered = FALSE;
+    WNDCLASS wc;
+    if (registered) return;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.lpfnWndProc   = core_wndproc;
+    wc.hInstance     = GetModuleHandle(NULL);
+    wc.lpszClassName = TEXT("RestCoreWindow");
+    RegisterClass(&wc);
+    registered = TRUE;
+}
+
+// =========================================================
+// 公共 API
+// =========================================================
+RestCore *rest_core_new(const Options *opts) {
+    RestCore *c = (RestCore *)calloc(1, sizeof(RestCore));
+    c->opts = *opts;
+
+    register_core_class();
+    // 创建一个不显示的普通窗口，用于承载定时器与消息(可靠接收 WM_TIMER / 会话通知)
+    c->hwnd = CreateWindow(TEXT("RestCoreWindow"), TEXT("rest-core"),
+                           WS_OVERLAPPED, 0, 0, 0, 0,
+                           NULL, NULL, GetModuleHandle(NULL), NULL);
+    SetWindowLongPtr(c->hwnd, GWLP_USERDATA, (LONG_PTR)c);
+
+    // 会话解锁通知(锁屏解锁后重新休息)
+    WTSRegisterSessionNotification(c->hwnd, NOTIFY_FOR_THIS_SESSION);
+    return c;
+}
+
+void rest_core_free(RestCore *c) {
+    if (!c) return;
+    if (c->hwnd) {
+        KillTimer(c->hwnd, ID_TIMER_REST);
+        KillTimer(c->hwnd, ID_TIMER_WORK);
+        KillTimer(c->hwnd, ID_TIMER_ENABLE_KEYS);
+        WTSUnRegisterSessionNotification(c->hwnd);
+        DestroyWindow(c->hwnd);
+    }
+    free(c);
+}
+
+void rest_core_start(RestCore *c) {
+    rest_log(c, "启动：初始休息 %d 秒", INIT_SECONDS);
+    start_rest(c, INIT_SECONDS);
+}
+
+void rest_core_run(RestCore *c) {
     MSG msg;
-    WNDCLASSEX wndclass;
-
-    HINSTANCE hInstance = GetModuleHandle(NULL); // 👈 新增
-
-    wndclass.cbSize = sizeof(WNDCLASSEX);
-    wndclass.style = CS_HREDRAW | CS_VREDRAW;
-    wndclass.lpfnWndProc = WndProc;
-    wndclass.cbClsExtra = 0;
-    wndclass.cbWndExtra = 0;
-    wndclass.hInstance = hInstance;
-    wndclass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wndclass.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wndclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wndclass.lpszMenuName = NULL;
-    wndclass.lpszClassName = szAppName;
-    wndclass.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
-
-    if (!RegisterClassEx(&wndclass)) {
-        MessageBox(NULL, _T("This program requires Windows NT!"), szAppName, MB_ICONERROR);
-        return 0;
-    }
-
-    hwnd = CreateWindow(
-        szAppName, _T("Have a break"),
-        WS_POPUP | WS_VISIBLE,
-        0, 0,
-        GetSystemMetrics(SM_CXSCREEN),
-        GetSystemMetrics(SM_CYSCREEN),
-        NULL, NULL, hInstance, NULL
-    );
-
-    if (!hwnd) {
-        MessageBox(NULL, "CreateWindow failed！", szAppName, MB_ICONERROR);
-        return 0;
-    }
-
-    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0,
-        GetSystemMetrics(SM_CXSCREEN),
-        GetSystemMetrics(SM_CYSCREEN),
-        SWP_SHOWWINDOW);
-
-    if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION)) {
-        printf("Failed to register session notification.\n");
-        return 1;
-    }
-
-    // 启动终端按键监听：c 唤起倒计时，q 退出程序
-    terminal_start_listen(on_terminal_key, hwnd);
-
+    (void)c;
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+}
 
-    return msg.wParam;
+// 线程安全：投递到消息窗口，在主循环线程上分发
+void rest_core_send_key(RestCore *c, char key) {
+    PostMessage(c->hwnd, WM_APP_KEY, (WPARAM)(unsigned char)key, 0);
+}
+
+// 解析命令行选项
+static void parse_options(int argc, char **argv, Options *opts) {
+    int i;
+    opts->debug = 1; // 默认开启日志
+
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--debug") == 0) {
+            opts->debug = 1;
+        } else if (strcmp(argv[i], "--no-debug") == 0) {
+            opts->debug = 0;
+        } else {
+            fprintf(stderr, "未知选项: %s\n", argv[i]);
+            fprintf(stderr, "用法: rest [--debug|--no-debug]\n");
+        }
+    }
+}
+
+int app_main(int argc, char **argv) {
+    Options opts;
+    RestCore *core;
+
+    parse_options(argc, argv, &opts);
+
+    core = rest_core_new(&opts);
+    view_init(core);          // 视图(编译期决定：GUI 或终端)
+    keyboard_start(core);     // 控制台键盘监听(GUI 与终端模式都启用)
+    rest_core_start(core);
+    rest_core_run(core);
+    view_destroy();
+    rest_core_free(core);
+    return 0;
 }
