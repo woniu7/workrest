@@ -1,4 +1,5 @@
 #include "../rest.h"
+#include "terminal.h"
 #include <gtk/gtk.h>
 #include <glib.h>
 
@@ -6,14 +7,34 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *label;
     int remaining_seconds;
-    gboolean is_resting; // TRUE = 休息中, FALSE = 工作中
-    guint timer_id;      // 定时器 ID
+    gboolean is_resting;   // TRUE = 休息中, FALSE = 工作中
+    gboolean keys_enabled; // FALSE = 延迟期内忽略按键
+    guint timer_id;        // 定时器 ID
+    guint enable_keys_id;  // 延迟启用按键的定时器 ID
 } AppContext;
 
 // 前向声明
 static void start_work(AppContext *app);
 static void start_rest(AppContext *app, int seconds);
 static gboolean on_timer_tick(gpointer user_data);
+static void update_label(AppContext *app);
+
+// 终端按键回调：c 唤起倒计时，q 退出程序
+static void on_terminal_key(char key, gpointer user_data) {
+    AppContext *app = (AppContext *)user_data;
+    switch (key) {
+        case 'c':
+        case 'C':
+            // 终端按 c：立即唤起休息倒计时
+            start_rest(app, BREAK_SECONDS);
+            break;
+        case 'q':
+        case 'Q':
+            // 终端按 q：退出程序
+            g_application_quit(G_APPLICATION(gtk_window_get_application(GTK_WINDOW(app->window))));
+            break;
+    }
+}
 
 // 停止当前定时器
 static void stop_timer(AppContext *app) {
@@ -21,6 +42,18 @@ static void stop_timer(AppContext *app) {
         g_source_remove(app->timer_id);
         app->timer_id = 0;
     }
+    if (app->enable_keys_id > 0) {
+        g_source_remove(app->enable_keys_id);
+        app->enable_keys_id = 0;
+    }
+}
+
+// 延迟结束后启用按键监听
+static gboolean enable_keys_cb(gpointer user_data) {
+    AppContext *app = (AppContext *)user_data;
+    app->keys_enabled = TRUE;
+    app->enable_keys_id = 0;
+    return G_SOURCE_REMOVE; // 单次触发
 }
 
 // 键盘按键回调 (对应 WM_KEYDOWN)
@@ -30,6 +63,11 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller,
                                gpointer user_data) {
     AppContext *app = (AppContext *)user_data;
 
+    // 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
+    if (!app->keys_enabled) {
+        return FALSE;
+    }
+
     switch (keyval) {
         case GDK_KEY_q:
         case GDK_KEY_Q:
@@ -38,13 +76,13 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller,
             return TRUE;
         case GDK_KEY_r:
         case GDK_KEY_R:
-            // 推迟 2 分钟 (进入工作模式 120秒)
+            // 推迟工作 (进入工作模式 POSTPONE_SECONDS 秒)
             start_work(app);
             // 这是一个特殊的 Work 状态，我们需要手动覆盖定时器逻辑
-            // 但为了简单复刻原逻辑，这里直接重置为 120s 后触发休息
+            // 但为了简单复刻原逻辑，这里直接重置为 POSTPONE_SECONDS 后触发休息
             stop_timer(app);
-            // 设置 120s 后触发休息的定时器 (单次触发)
-            app->timer_id = g_timeout_add_seconds(120, (GSourceFunc)on_timer_tick, app);
+            // 设置 POSTPONE_SECONDS 后触发休息的定时器 (单次触发)
+            app->timer_id = g_timeout_add_seconds(POSTPONE_SECONDS, (GSourceFunc)on_timer_tick, app);
             app->is_resting = FALSE; // 标记为工作中
             return TRUE;
 
@@ -53,6 +91,13 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller,
             // C 立即继续工作
             // 停止当前倒计时/休息状态，并开始主工作计时
             start_work(app);
+            return TRUE;
+
+        case GDK_KEY_l:
+        case GDK_KEY_L:
+            // L 直接把倒计时设为 999999
+            app->remaining_seconds = 999999;
+            update_label(app);
             return TRUE;
     }
     return FALSE;
@@ -97,6 +142,10 @@ static void start_rest(AppContext *app, int seconds) {
     stop_timer(app);
     app->is_resting = TRUE;
     app->remaining_seconds = seconds;
+
+    // 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
+    app->keys_enabled = FALSE;
+    app->enable_keys_id = g_timeout_add_seconds(DELAY_SECONDS, enable_keys_cb, app);
 
     // 显示并全屏 (对应 ShowWindow SW_SHOWMAXIMIZED 和 HWND_TOPMOST)
     gtk_widget_set_visible(app->window, TRUE);
@@ -146,6 +195,9 @@ static void activate(GtkApplication *app_instance, gpointer user_data) {
     GtkEventController *controller = gtk_event_controller_key_new();
     g_signal_connect(controller, "key-pressed", G_CALLBACK(on_key_pressed), app);
     gtk_widget_add_controller(app->window, controller);
+
+    // 监听终端(stdin)按键：c 唤起倒计时，q 退出程序
+    terminal_start_listen(on_terminal_key, app);
 
     // 初始状态：先休息 initCount 秒
     start_rest(app, INIT_SECONDS);

@@ -1,4 +1,5 @@
 #include "../rest.h"
+#include "terminal.h"
 #include <windows.h>
 #include <stdio.h>
 #include <tchar.h>
@@ -9,8 +10,26 @@
 
 #define ID_TIMER_REST 1  // 休息倒计时, 用于休息倒计时
 #define ID_TIMER_WORK_END 2  // 工作计时器，用于等待工作时间
+#define ID_TIMER_ENABLE_KEYS 3  // 延迟启用按键监听
+
+#define WM_APP_SUMMON_REST (WM_APP + 1)  // 终端按 c 唤起倒计时
+
+// 倒计时开始后的延迟期内忽略按键，防止误触
+static BOOL g_keysEnabled = FALSE;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+
+// 终端按键回调(在监听线程中执行)：c 唤起倒计时，q 退出程序。
+// 通过 PostMessage 投递到窗口线程，保证线程安全。
+static void on_terminal_key(char key, void *user_data) {
+    HWND hwnd = (HWND)user_data;
+    if (key == 'c' || key == 'C') {
+        PostMessage(hwnd, WM_APP_SUMMON_REST, 0, 0);
+    } else if (key == 'q' || key == 'Q') {
+        PostMessage(hwnd, WM_CLOSE, 0, 0);
+    }
+}
+
 int HaveARest(HWND hwnd, int restSecond);
 int HaveAWork(HWND hwnd, int workSecond);
 
@@ -43,9 +62,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			} else if (wParam == ID_TIMER_WORK_END) {
 				//工作结束, 开始休息
 				HaveARest(hwnd, BREAK_SECONDS);
+			} else if (wParam == ID_TIMER_ENABLE_KEYS) {
+				// 延迟结束，启用按键监听
+				g_keysEnabled = TRUE;
+				KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
 			}
 			return 0;
-		case WM_WTSSESSION_CHANGE: 
+		case WM_APP_SUMMON_REST:
+			// 终端按 r：立即唤起休息倒计时
+			KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
+			KillTimer(hwnd, ID_TIMER_REST);      // 先取消之前的定时器
+			HaveARest(hwnd, BREAK_SECONDS);
+			return 0;
+
+		case WM_WTSSESSION_CHANGE:
 			if (wParam == WTS_SESSION_UNLOCK) {
 				printf("User has unlocked the computer.\n");
 				KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
@@ -94,9 +124,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			// 停止所有定时器
 			KillTimer(hwnd, ID_TIMER_REST);
 			KillTimer(hwnd, ID_TIMER_WORK_END);
+			KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
 			PostQuitMessage(0);
 			return 0;
 		case WM_KEYDOWN:
+			// 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
+			if (!g_keysEnabled) return 0;
 			switch (wParam)
 			{
 				// q关闭
@@ -107,7 +140,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
 				case 0x52:
 					KillTimer(hwnd, ID_TIMER_WORK_END);  // 先取消之前的定时器
 					KillTimer(hwnd, ID_TIMER_REST);  // 先取消之前的定时器
-					HaveAWork(hwnd, 120);
+					HaveAWork(hwnd, POSTPONE_SECONDS);
+					break;
+				// L 直接把倒计时设为 999999
+				case 0x4C:
+					SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)999999);
+					InvalidateRect(hwnd, NULL, TRUE); // 触发重绘
 					break;
 				default:
 					break;
@@ -128,12 +166,17 @@ int HaveARest(HWND hwnd, int restSecond) {
 
 	// 启动休息定时器, 开始倒计时
 	SetTimer(hwnd, ID_TIMER_REST, 1000, NULL);
+
+	// 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
+	g_keysEnabled = FALSE;
+	SetTimer(hwnd, ID_TIMER_ENABLE_KEYS, DELAY_SECONDS * 1000, NULL);
 	return 0;
 }
 
 int HaveAWork(HWND hwnd, int workSecond) {
 	// 倒计时结束，停止休息计时器
 	KillTimer(hwnd, ID_TIMER_REST);
+	KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
 	// 最小化窗口
 	//ShowWindow(hwnd, SW_MINIMIZE);
 	// 隐藏任务栏图标
@@ -195,6 +238,9 @@ int app_main(int argc, char **argv) {
         printf("Failed to register session notification.\n");
         return 1;
     }
+
+    // 启动终端按键监听：c 唤起倒计时，q 退出程序
+    terminal_start_listen(on_terminal_key, hwnd);
 
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
