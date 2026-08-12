@@ -234,6 +234,7 @@ static void parse_options(int argc, char **argv, Options *opts) {
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             fprintf(stderr, "Usage: rest [--debug|--no-debug]\n");
+            exit(1);
         }
     }
 }

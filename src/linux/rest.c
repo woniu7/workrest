@@ -4,6 +4,7 @@
 #include <glib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Core state machine (depends on no view, uses only the GLib main loop and timers)
@@ -188,6 +189,7 @@ static void parse_options(int argc, char **argv, Options *opts) {
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             fprintf(stderr, "Usage: rest [--debug|--no-debug]\n");
+            exit(1);
         }
     }
 }
