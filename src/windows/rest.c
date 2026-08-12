@@ -8,21 +8,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ID_TIMER_REST        1  // 休息倒计时(每秒)
-#define ID_TIMER_WORK        2  // 工作计时(单次)
-#define ID_TIMER_ENABLE_KEYS 3  // 延迟启用按键(单次)
-#define WM_APP_KEY (WM_APP + 1) // 送入按键：wParam = 字符
+#define ID_TIMER_REST        1  // Rest countdown (per second)
+#define ID_TIMER_WORK        2  // Work timer (one-shot)
+#define ID_TIMER_ENABLE_KEYS 3  // Delayed key enabling (one-shot)
+#define WM_APP_KEY (WM_APP + 1) // Feed in a key: wParam = character
 
-// 核心状态机(不依赖可见 UI；用隐藏消息窗口承载定时器与消息)
+// Core state machine (independent of any visible UI; a hidden message window carries the timers and messages)
 struct RestCore {
     Options opts;
-    HWND    hwnd;           // 隐藏消息窗口
+    HWND    hwnd;           // Hidden message window
     int     remaining_seconds;
-    BOOL    is_resting;     // TRUE = 休息中, FALSE = 工作中
-    BOOL    keys_enabled;   // FALSE = 延迟期内忽略按键
+    BOOL    is_resting;     // TRUE = resting, FALSE = working
+    BOOL    keys_enabled;   // FALSE = ignore keys during the delay period
 };
 
-// --- 调试日志(--debug，默认开启)，输出到 stderr ---
+// --- Debug log (--debug, enabled by default), written to stderr ---
 static void rest_log(RestCore *c, const char *fmt, ...) {
     va_list ap;
     if (!c->opts.debug) return;
@@ -34,24 +34,24 @@ static void rest_log(RestCore *c, const char *fmt, ...) {
     fflush(stderr);
 }
 
-// --- 通知视图(直接调用 view_*，链接期已确定是哪一种实现) ---
+// --- Notify the view (call view_* directly; which implementation is fixed at link time) ---
 static void notify_rest_begin(RestCore *c, int seconds) {
-    rest_log(c, "进入休息，倒计时 %d 秒", seconds);
+    rest_log(c, "Entering rest, countdown %d s", seconds);
     view_rest_begin(seconds);
 }
 static void notify_tick(RestCore *c, int seconds) {
     view_tick(seconds);
 }
 static void notify_work_begin(RestCore *c) {
-    rest_log(c, "进入工作模式");
+    rest_log(c, "Entering work mode");
     view_work_begin();
 }
 
-// --- 状态机(前向声明) ---
+// --- State machine (forward declarations) ---
 static void start_rest(RestCore *c, int seconds);
 static void start_work(RestCore *c, int seconds);
 
-// 休息倒计时每秒触发
+// Fires every second during the rest countdown
 static void core_tick(RestCore *c) {
     c->remaining_seconds--;
     notify_tick(c, c->remaining_seconds);
@@ -60,7 +60,7 @@ static void core_tick(RestCore *c) {
     }
 }
 
-// 开始休息(显示界面并倒计时)
+// Start resting (show the UI and count down)
 static void start_rest(RestCore *c, int seconds) {
     KillTimer(c->hwnd, ID_TIMER_WORK);
     KillTimer(c->hwnd, ID_TIMER_REST);
@@ -69,7 +69,7 @@ static void start_rest(RestCore *c, int seconds) {
     c->is_resting = TRUE;
     c->remaining_seconds = seconds;
 
-    // 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
+    // Countdown starts: disable keys first, enable them after DELAY_SECONDS seconds
     c->keys_enabled = FALSE;
     SetTimer(c->hwnd, ID_TIMER_ENABLE_KEYS, DELAY_SECONDS * 1000, NULL);
 
@@ -77,7 +77,7 @@ static void start_rest(RestCore *c, int seconds) {
     SetTimer(c->hwnd, ID_TIMER_REST, 1000, NULL);
 }
 
-// 开始工作(隐藏界面，seconds 秒后进入休息)
+// Start working (hide the UI, enter rest after `seconds` seconds)
 static void start_work(RestCore *c, int seconds) {
     KillTimer(c->hwnd, ID_TIMER_REST);
     KillTimer(c->hwnd, ID_TIMER_WORK);
@@ -88,37 +88,37 @@ static void start_work(RestCore *c, int seconds) {
     SetTimer(c->hwnd, ID_TIMER_WORK, seconds * 1000, NULL);
 }
 
-// 按键分发(按键语义以当前 UI 为准：q/r/c/l)
+// Key dispatch (key semantics follow the current UI: q/r/c/l)
 static void dispatch_key(RestCore *c, char key) {
-    // 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
+    // Ignore keys during the first DELAY_SECONDS seconds after the countdown starts, to prevent accidental presses
     if (!c->keys_enabled) return;
 
     switch (key) {
         case 'q':
         case 'Q':
-            rest_log(c, "按键 q：退出");
+            rest_log(c, "Key q: quit");
             PostQuitMessage(0);
             break;
         case 'r':
         case 'R':
-            rest_log(c, "按键 r：推迟工作 %d 秒", POSTPONE_SECONDS);
+            rest_log(c, "Key r: postpone work by %d s", POSTPONE_SECONDS);
             start_work(c, POSTPONE_SECONDS);
             break;
         case 'c':
         case 'C':
-            rest_log(c, "按键 c：立即继续工作");
+            rest_log(c, "Key c: continue working immediately");
             start_work(c, WORK_SECONDS);
             break;
         case 'l':
         case 'L':
-            rest_log(c, "按键 l：倒计时设为 999999");
+            rest_log(c, "Key l: set countdown to 999999");
             c->remaining_seconds = 999999;
             notify_tick(c, c->remaining_seconds);
             break;
         case 'b':
         case 'B':
-            // 立即触发休息倒计时；若已在倒计时中则重置为 BREAK_SECONDS
-            rest_log(c, "按键 b：触发/重置倒计时 %d 秒", BREAK_SECONDS);
+            // Trigger the rest countdown immediately; if already counting down, reset to BREAK_SECONDS
+            rest_log(c, "Key b: trigger/reset countdown to %d s", BREAK_SECONDS);
             start_rest(c, BREAK_SECONDS);
             break;
         default:
@@ -126,7 +126,7 @@ static void dispatch_key(RestCore *c, char key) {
     }
 }
 
-// 隐藏消息窗口的窗口过程：承载定时器、按键投递、会话变化
+// Window procedure of the hidden message window: carries timers, key delivery, session changes
 static LRESULT CALLBACK core_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     RestCore *c = (RestCore *)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 
@@ -140,7 +140,7 @@ static LRESULT CALLBACK core_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             } else if (wp == ID_TIMER_ENABLE_KEYS) {
                 c->keys_enabled = TRUE;
                 KillTimer(hwnd, ID_TIMER_ENABLE_KEYS);
-                rest_log(c, "按键已启用");
+                rest_log(c, "Keys enabled");
             }
             return 0;
 
@@ -150,7 +150,7 @@ static LRESULT CALLBACK core_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 
         case WM_WTSSESSION_CHANGE:
             if (c && wp == WTS_SESSION_UNLOCK) {
-                rest_log(c, "会话解锁，重新进入休息");
+                rest_log(c, "Session unlocked, re-entering rest");
                 start_rest(c, INIT_SECONDS);
             }
             return 0;
@@ -158,7 +158,7 @@ static LRESULT CALLBACK core_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
     return DefWindowProc(hwnd, msg, wp, lp);
 }
 
-// 注册隐藏窗口类(只需一次)
+// Register the hidden window class (only needed once)
 static void register_core_class(void) {
     static BOOL registered = FALSE;
     WNDCLASS wc;
@@ -172,20 +172,20 @@ static void register_core_class(void) {
 }
 
 // =========================================================
-// 公共 API
+// Public API
 // =========================================================
 RestCore *rest_core_new(const Options *opts) {
     RestCore *c = (RestCore *)calloc(1, sizeof(RestCore));
     c->opts = *opts;
 
     register_core_class();
-    // 创建一个不显示的普通窗口，用于承载定时器与消息(可靠接收 WM_TIMER / 会话通知)
+    // Create a non-visible ordinary window to carry timers and messages (reliably receives WM_TIMER / session notifications)
     c->hwnd = CreateWindow(TEXT("RestCoreWindow"), TEXT("rest-core"),
                            WS_OVERLAPPED, 0, 0, 0, 0,
                            NULL, NULL, GetModuleHandle(NULL), NULL);
     SetWindowLongPtr(c->hwnd, GWLP_USERDATA, (LONG_PTR)c);
 
-    // 会话解锁通知(锁屏解锁后重新休息)
+    // Session unlock notification (re-enter rest after unlocking the lock screen)
     WTSRegisterSessionNotification(c->hwnd, NOTIFY_FOR_THIS_SESSION);
     return c;
 }
@@ -203,7 +203,7 @@ void rest_core_free(RestCore *c) {
 }
 
 void rest_core_start(RestCore *c) {
-    rest_log(c, "启动：初始休息 %d 秒", INIT_SECONDS);
+    rest_log(c, "Startup: initial rest %d s", INIT_SECONDS);
     start_rest(c, INIT_SECONDS);
 }
 
@@ -216,15 +216,15 @@ void rest_core_run(RestCore *c) {
     }
 }
 
-// 线程安全：投递到消息窗口，在主循环线程上分发
+// Thread-safe: post to the message window, dispatch on the main loop thread
 void rest_core_send_key(RestCore *c, char key) {
     PostMessage(c->hwnd, WM_APP_KEY, (WPARAM)(unsigned char)key, 0);
 }
 
-// 解析命令行选项
+// Parse command-line options
 static void parse_options(int argc, char **argv, Options *opts) {
     int i;
-    opts->debug = 1; // 默认开启日志
+    opts->debug = 1; // Logging enabled by default
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--debug") == 0) {
@@ -232,8 +232,8 @@ static void parse_options(int argc, char **argv, Options *opts) {
         } else if (strcmp(argv[i], "--no-debug") == 0) {
             opts->debug = 0;
         } else {
-            fprintf(stderr, "未知选项: %s\n", argv[i]);
-            fprintf(stderr, "用法: rest [--debug|--no-debug]\n");
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            fprintf(stderr, "Usage: rest [--debug|--no-debug]\n");
         }
     }
 }
@@ -245,8 +245,8 @@ int app_main(int argc, char **argv) {
     parse_options(argc, argv, &opts);
 
     core = rest_core_new(&opts);
-    view_init(core);          // 视图(编译期决定：GUI 或终端)
-    keyboard_start(core);     // 控制台键盘监听(GUI 与终端模式都启用)
+    view_init(core);          // View (decided at compile time: GUI or CLI)
+    keyboard_start(core);     // Console keyboard listener (enabled in both GUI and CLI modes)
     rest_core_start(core);
     rest_core_run(core);
     view_destroy();

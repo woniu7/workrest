@@ -1,4 +1,4 @@
-// Win32 视图实现：全屏弹出窗口显示倒计时 + 键盘输入。
+// Win32 view implementation: fullscreen popup window showing the countdown + keyboard input.
 #include "../view.h"
 #include "../rest.h"
 #include <windows.h>
@@ -7,9 +7,9 @@
 static RestCore *g_core  = NULL;
 static HWND      g_hwnd  = NULL;
 static HFONT     g_font  = NULL;
-static int       g_count = 0;   // 当前显示的秒数
+static int       g_count = 0;   // Currently displayed seconds
 
-// 窗口过程：绘制倒计时、把按键转交核心
+// Window procedure: draws the countdown, forwards keys to the core
 static LRESULT CALLBACK ui_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_PAINT: {
@@ -21,7 +21,7 @@ static LRESULT CALLBACK ui_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             hdc = BeginPaint(hwnd, &ps);
             GetClientRect(hwnd, &rect);
             if (g_font) SelectObject(hdc, g_font);
-            SetTextColor(hdc, RGB(255, 255, 255)); // 白色
+            SetTextColor(hdc, RGB(255, 255, 255)); // White
             SetBkMode(hdc, TRANSPARENT);
             wsprintf(buf, TEXT("%d"), g_count);
             DrawText(hdc, buf, -1, &rect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
@@ -29,7 +29,7 @@ static LRESULT CALLBACK ui_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_KEYDOWN:
-            // 按键转成字符送入核心(VK 码对字母即大写 ASCII)
+            // Convert the key to a character and feed the core (VK codes for letters are uppercase ASCII)
             rest_core_send_key(g_core, (char)wp);
             return 0;
         case WM_DESTROY:
@@ -38,7 +38,7 @@ static LRESULT CALLBACK ui_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProc(hwnd, msg, wp, lp);
 }
 
-// --- view 接口实现 ---
+// --- view interface implementation ---
 void view_init(RestCore *core) {
     WNDCLASSEX wc;
     HINSTANCE hInst = GetModuleHandle(NULL);
@@ -83,7 +83,7 @@ void view_rest_begin(int seconds) {
 
 void view_tick(int seconds) {
     g_count = seconds;
-    InvalidateRect(g_hwnd, NULL, TRUE); // 触发重绘
+    InvalidateRect(g_hwnd, NULL, TRUE); // Trigger a repaint
 }
 
 void view_work_begin(void) {

@@ -1,36 +1,36 @@
 # =========================
-# 公共构建逻辑
-# 由 src/<platform>/Makefile include。
-# 调用方(平台 Makefile)需先定义:CC / CFLAGS / LDFLAGS,可选 TARGET / VIEW。
+# Common build logic
+# Included by src/<platform>/Makefile.
+# The caller (platform Makefile) must define CC / CFLAGS / LDFLAGS first, optionally TARGET / VIEW.
 # =========================
 
 TARGET     ?= rest
 VIEW       ?= gui
 BUILD_DIR  ?= build
 
-# 公共源码所在目录(即 src/)
+# Directory of the common sources (i.e. src/)
 COMMON_DIR := ..
 
-# 视图实现(编译期二选一):terminal(默认) 或 gui
+# View implementation (pick one at compile time): cli (default) or gui
 ifeq ($(VIEW), gui)
-    VIEW_EXCLUDE := terminal.c
-else ifeq ($(VIEW), terminal)
-    VIEW_EXCLUDE := ui.c
+    VIEW_EXCLUDE := cli.c
+else ifeq ($(VIEW), cli)
+    VIEW_EXCLUDE := gui.c
 else
-    $(error VIEW 必须是 terminal 或 gui)
+    $(error VIEW must be cli or gui)
 endif
 
-# 源文件:公共目录(../*.c) + 当前平台目录(./*.c),再剔除未选中的视图实现
+# Sources: common dir (../*.c) + current platform dir (./*.c), minus the unselected view impl
 COMMON_SRCS := $(notdir $(wildcard $(COMMON_DIR)/*.c))
 PLAT_SRCS   := $(filter-out $(VIEW_EXCLUDE),$(wildcard *.c))
 SRCS        := $(COMMON_SRCS) $(PLAT_SRCS)
 OBJS        := $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
 
-# 让 %.c 规则能同时在平台目录和公共目录里找到源文件
+# Let the %.c rule find sources in both the platform dir and the common dir
 vpath %.c . $(COMMON_DIR)
 
 # =========================
-# 构建规则
+# Build rules
 # =========================
 all: $(BUILD_DIR)/$(TARGET)
 
@@ -43,13 +43,13 @@ $(BUILD_DIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # =========================
-# 清理
+# Clean
 # =========================
 clean:
 	rm -rf $(BUILD_DIR)
 
 # =========================
-# 打印配置（调试用）
+# Print configuration (for debugging)
 # =========================
 info:
 	@echo "Platform: $(PLATFORM)"

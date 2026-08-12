@@ -6,18 +6,18 @@
 #include <stdarg.h>
 #include <string.h>
 
-// 核心状态机(不依赖任何视图，仅用 GLib 主循环与定时器)
+// Core state machine (depends on no view, uses only the GLib main loop and timers)
 struct RestCore {
     Options    opts;
     GMainLoop *loop;
     int        remaining_seconds;
-    gboolean   is_resting;    // TRUE = 休息中, FALSE = 工作中
-    gboolean   keys_enabled;  // FALSE = 延迟期内忽略按键
-    guint      timer_id;      // 倒计时/工作定时器
-    guint      enable_keys_id;// 延迟启用按键的定时器
+    gboolean   is_resting;    // TRUE = resting, FALSE = working
+    gboolean   keys_enabled;  // FALSE = ignore keys during the delay period
+    guint      timer_id;      // Countdown/work timer
+    guint      enable_keys_id;// Timer for delayed key enabling
 };
 
-// --- 调试日志(--debug，默认开启)，输出到 stderr ---
+// --- Debug log (--debug, enabled by default), written to stderr ---
 static void rest_log(RestCore *c, const char *fmt, ...) {
     va_list ap;
     if (!c->opts.debug) return;
@@ -29,20 +29,20 @@ static void rest_log(RestCore *c, const char *fmt, ...) {
     fflush(stderr);
 }
 
-// --- 通知视图(直接调用 view_*，链接期已确定是哪一种实现) ---
+// --- Notify the view (call view_* directly; which implementation is fixed at link time) ---
 static void notify_rest_begin(RestCore *c, int seconds) {
-    rest_log(c, "进入休息，倒计时 %d 秒", seconds);
+    rest_log(c, "Entering rest, countdown %d s", seconds);
     view_rest_begin(seconds);
 }
 static void notify_tick(RestCore *c, int seconds) {
     view_tick(seconds);
 }
 static void notify_work_begin(RestCore *c) {
-    rest_log(c, "进入工作模式");
+    rest_log(c, "Entering work mode");
     view_work_begin();
 }
 
-// --- 定时器管理 ---
+// --- Timer management ---
 static void stop_timers(RestCore *c) {
     if (c->timer_id > 0) {
         g_source_remove(c->timer_id);
@@ -54,19 +54,19 @@ static void stop_timers(RestCore *c) {
     }
 }
 
-// 延迟结束后启用按键
+// Enable keys after the delay ends
 static gboolean enable_keys_cb(gpointer d) {
     RestCore *c = (RestCore *)d;
     c->keys_enabled = TRUE;
     c->enable_keys_id = 0;
-    rest_log(c, "按键已启用");
-    return G_SOURCE_REMOVE; // 单次触发
+    rest_log(c, "Keys enabled");
+    return G_SOURCE_REMOVE; // One-shot
 }
 
 static void start_rest(RestCore *c, int seconds);
 static void start_work(RestCore *c, int seconds);
 
-// 定时器回调
+// Timer callback
 static gboolean on_tick(gpointer d) {
     RestCore *c = (RestCore *)d;
 
@@ -84,13 +84,13 @@ static gboolean on_tick(gpointer d) {
     }
 }
 
-// 开始休息(显示界面并倒计时)
+// Start resting (show the UI and count down)
 static void start_rest(RestCore *c, int seconds) {
     stop_timers(c);
     c->is_resting = TRUE;
     c->remaining_seconds = seconds;
 
-    // 倒计时开始，先禁用按键，DELAY_SECONDS 秒后再启用
+    // Countdown starts: disable keys first, enable them after DELAY_SECONDS seconds
     c->keys_enabled = FALSE;
     c->enable_keys_id = g_timeout_add_seconds(DELAY_SECONDS, enable_keys_cb, c);
 
@@ -98,7 +98,7 @@ static void start_rest(RestCore *c, int seconds) {
     c->timer_id = g_timeout_add(1000, on_tick, c);
 }
 
-// 开始工作(隐藏界面，seconds 秒后进入休息)
+// Start working (hide the UI, enter rest after `seconds` seconds)
 static void start_work(RestCore *c, int seconds) {
     stop_timers(c);
     c->is_resting = FALSE;
@@ -106,37 +106,37 @@ static void start_work(RestCore *c, int seconds) {
     c->timer_id = g_timeout_add_seconds(seconds, on_tick, c);
 }
 
-// 按键分发(按键语义以当前 UI 为准：q/r/c/l)
+// Key dispatch (key semantics follow the current UI: q/r/c/l)
 static void dispatch_key(RestCore *c, char key) {
-    // 倒计时开始后的 DELAY_SECONDS 秒内忽略按键，防止误触
+    // Ignore keys during the first DELAY_SECONDS seconds after the countdown starts, to prevent accidental presses
     if (!c->keys_enabled) return;
 
     switch (key) {
         case 'q':
         case 'Q':
-            rest_log(c, "按键 q：退出");
+            rest_log(c, "Key q: quit");
             g_main_loop_quit(c->loop);
             break;
         case 'r':
         case 'R':
-            rest_log(c, "按键 r：推迟工作 %d 秒", POSTPONE_SECONDS);
+            rest_log(c, "Key r: postpone work by %d s", POSTPONE_SECONDS);
             start_work(c, POSTPONE_SECONDS);
             break;
         case 'c':
         case 'C':
-            rest_log(c, "按键 c：立即继续工作");
+            rest_log(c, "Key c: continue working immediately");
             start_work(c, WORK_SECONDS);
             break;
         case 'l':
         case 'L':
-            rest_log(c, "按键 l：倒计时设为 999999");
+            rest_log(c, "Key l: set countdown to 999999");
             c->remaining_seconds = 999999;
             notify_tick(c, c->remaining_seconds);
             break;
         case 'b':
         case 'B':
-            // 立即触发休息倒计时；若已在倒计时中则重置为 BREAK_SECONDS
-            rest_log(c, "按键 b：触发/重置倒计时 %d 秒", BREAK_SECONDS);
+            // Trigger the rest countdown immediately; if already counting down, reset to BREAK_SECONDS
+            rest_log(c, "Key b: trigger/reset countdown to %d s", BREAK_SECONDS);
             start_rest(c, BREAK_SECONDS);
             break;
         default:
@@ -145,7 +145,7 @@ static void dispatch_key(RestCore *c, char key) {
 }
 
 // =========================================================
-// 公共 API
+// Public API
 // =========================================================
 RestCore *rest_core_new(const Options *opts) {
     RestCore *c = g_new0(RestCore, 1);
@@ -162,7 +162,7 @@ void rest_core_free(RestCore *c) {
 }
 
 void rest_core_start(RestCore *c) {
-    rest_log(c, "启动：初始休息 %d 秒", INIT_SECONDS);
+    rest_log(c, "Startup: initial rest %d s", INIT_SECONDS);
     start_rest(c, INIT_SECONDS);
 }
 
@@ -170,15 +170,15 @@ void rest_core_run(RestCore *c) {
     g_main_loop_run(c->loop);
 }
 
-// stdin 回调在主循环线程上执行，可直接分发
+// The stdin callback runs on the main loop thread, so it can dispatch directly
 void rest_core_send_key(RestCore *c, char key) {
     dispatch_key(c, key);
 }
 
-// 解析命令行选项
+// Parse command-line options
 static void parse_options(int argc, char **argv, Options *opts) {
     int i;
-    opts->debug = 1; // 默认开启日志
+    opts->debug = 1; // Logging enabled by default
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--debug") == 0) {
@@ -186,8 +186,8 @@ static void parse_options(int argc, char **argv, Options *opts) {
         } else if (strcmp(argv[i], "--no-debug") == 0) {
             opts->debug = 0;
         } else {
-            fprintf(stderr, "未知选项: %s\n", argv[i]);
-            fprintf(stderr, "用法: rest [--debug|--no-debug]\n");
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            fprintf(stderr, "Usage: rest [--debug|--no-debug]\n");
         }
     }
 }
@@ -199,8 +199,8 @@ int app_main(int argc, char **argv) {
     parse_options(argc, argv, &opts);
 
     core = rest_core_new(&opts);
-    view_init(core);          // 视图(编译期决定：GUI 或终端)
-    keyboard_start(core);     // 终端键盘监听(GUI 与终端模式都启用)
+    view_init(core);          // View (decided at compile time: GUI or CLI)
+    keyboard_start(core);     // Terminal keyboard listener (enabled in both GUI and CLI modes)
     rest_core_start(core);
     rest_core_run(core);
     view_destroy();

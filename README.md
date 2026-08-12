@@ -17,11 +17,11 @@ Keys are case-insensitive, and are ignored for a short delay right after a count
 ```sh
 make                     # linux, gui view (default) -> build/linux/
 make PLATFORM=windows    # cross-compile for windows -> rest.exe
-make VIEW=terminal       # linux with the terminal view
+make VIEW=cli            # linux with the cli view
 make clean
 ```
 
 - `PLATFORM`: `linux` (default) / `windows`
-- `VIEW`: `gui` (default) / `terminal`
+- `VIEW`: `gui` (default) / `cli`
 
 You can also build a platform directly under its dir, e.g. `cd src/linux && make`.

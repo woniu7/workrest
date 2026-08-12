@@ -1,5 +1,5 @@
-// 终端(stdin)键盘监听：把终端设为非规范模式，逐字符读取并送入核心。
-// 与视图无关，GUI/终端两种构建都会链接。
+// Terminal (stdin) keyboard listener: puts the terminal into non-canonical mode, reads char by char and feeds the core.
+// View-independent; linked by both the GUI and CLI builds.
 #include "../keyboard.h"
 #include "../rest.h"
 #include <glib.h>
@@ -8,11 +8,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-// 终端原始设置，用于退出时恢复
+// Original terminal settings, used to restore on exit
 static struct termios g_orig_termios;
 static gboolean g_termios_saved = FALSE;
 
-// 退出时恢复终端设置
+// Restore terminal settings on exit
 static void restore_terminal(void) {
     if (g_termios_saved) {
         tcsetattr(STDIN_FILENO, TCSANOW, &g_orig_termios);
@@ -20,22 +20,22 @@ static void restore_terminal(void) {
     }
 }
 
-// 把终端设为非规范模式：无需回车、不回显，即时读取按键
+// Put the terminal into non-canonical mode: no Enter needed, no echo, read keys instantly
 static void setup_terminal(void) {
     struct termios raw;
-    if (!isatty(STDIN_FILENO)) return; // 非终端(如管道)则不处理
+    if (!isatty(STDIN_FILENO)) return; // Skip if not a terminal (e.g. a pipe)
     if (tcgetattr(STDIN_FILENO, &g_orig_termios) != 0) return;
     g_termios_saved = TRUE;
     atexit(restore_terminal);
 
     raw = g_orig_termios;
-    raw.c_lflag &= ~(ICANON | ECHO); // 关闭行缓冲与回显，保留 ISIG(Ctrl-C 仍有效)
+    raw.c_lflag &= ~(ICANON | ECHO); // Disable line buffering and echo, keep ISIG (Ctrl-C still works)
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
 }
 
-// stdin 有输入时的回调：把字符送入核心
+// Callback when stdin has input: feed the character into the core
 static gboolean on_stdin(gint fd, GIOCondition condition, gpointer user_data) {
     RestCore *core = (RestCore *)user_data;
     char c;

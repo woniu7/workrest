@@ -1,29 +1,28 @@
 #ifndef REST_H
 #define REST_H
 
-// 配置常量
+// Configuration constants
 #define WORK_SECONDS 2700
 #define BREAK_SECONDS 180
 #define INIT_SECONDS 3
 #define DELAY_SECONDS 1
-#define POSTPONE_SECONDS 120  // r 键推迟工作的秒数
+#define POSTPONE_SECONDS 120  // Seconds the 'r' key postpones work by
 
-// 运行选项(由命令行解析)
+// Runtime options (parsed from the command line)
 typedef struct {
-    int debug;   // --debug：显示日志(默认开启)
+    int debug;   // --debug: show logs (enabled by default)
 } Options;
 
-// 核心状态机(不透明类型，实现见各平台 rest.c，不依赖任何视图)
+// Core state machine (opaque type; implemented per platform in rest.c, depends on no view)
 typedef struct RestCore RestCore;
 
 RestCore *rest_core_new(const Options *opts);
 void rest_core_free(RestCore *core);
-void rest_core_start(RestCore *core);   // 进入初始休息，启动状态机
-void rest_core_run(RestCore *core);     // 运行主循环，阻塞直到退出
+void rest_core_start(RestCore *core);   // Enter the initial rest, start the state machine
+void rest_core_run(RestCore *core);     // Run the main loop, blocks until exit
 
-// 线程安全地送入一个按键(视图从任意线程调用)。按键语义以当前 UI 为准：
-//   q 退出 / r 推迟 / c 继续工作 / l 倒计时设为 999999
-// 倒计时开始后的 DELAY_SECONDS 秒内会忽略按键，防止误触。
+// Thread-safely feed in a key (the view may call from any thread). 
+// Keys are ignored during the first DELAY_SECONDS seconds after the countdown starts, to prevent accidental presses.
 void rest_core_send_key(RestCore *core, char key);
 
 int app_main(int argc, char **argv);

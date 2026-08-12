@@ -1,5 +1,5 @@
-// 控制台键盘监听：独立线程读键并送入核心。
-// 与视图无关，GUI/终端两种构建都会链接。
+// Console keyboard listener: a dedicated thread reads keys and feeds them into the core.
+// View-independent; linked by both the GUI and CLI builds.
 #include "../keyboard.h"
 #include "../rest.h"
 #include <windows.h>
@@ -7,7 +7,7 @@
 #include <process.h>
 #include <stdint.h>
 
-// 控制台按键监听线程：读到按键就(线程安全地)送入核心
+// Console key listener thread: on each key read, (thread-safely) feed it into the core
 static unsigned __stdcall console_input_thread(void *arg) {
     RestCore *core = (RestCore *)arg;
     while (1) {

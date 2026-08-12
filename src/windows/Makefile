@@ -1,4 +1,4 @@
-# windows 平台配置(mingw 交叉编译)。可在本目录直接 make。
+# windows platform config (mingw cross-compile). Can run `make` directly in this directory.
 PLATFORM := windows
 VIEW     ?= gui
 

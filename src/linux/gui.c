@@ -1,4 +1,4 @@
-// GTK 视图实现：全屏窗口显示倒计时 + 键盘输入。
+// GTK view implementation: fullscreen window showing the countdown + keyboard input.
 #include "../view.h"
 #include "../rest.h"
 #include <gtk/gtk.h>
@@ -7,7 +7,7 @@ static RestCore  *g_core   = NULL;
 static GtkWidget *g_window = NULL;
 static GtkWidget *g_label  = NULL;
 
-// 更新倒计时大数字
+// Update the large countdown number
 static void update_label(int seconds) {
     char buffer[16];
     char *markup;
@@ -17,7 +17,7 @@ static void update_label(int seconds) {
     g_free(markup);
 }
 
-// GTK 按键：转成字符后送入核心
+// GTK key press: convert to a character and feed the core
 static gboolean on_key_pressed(GtkEventControllerKey *controller,
                                guint keyval, guint keycode,
                                GdkModifierType state,
@@ -30,7 +30,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller,
     return FALSE;
 }
 
-// --- view 接口实现 ---
+// --- view interface implementation ---
 void view_init(RestCore *core) {
     GtkCssProvider *provider;
     GtkEventController *controller;
