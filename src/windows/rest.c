@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define ID_TIMER_REST        1  // Rest countdown (per second)
 #define ID_TIMER_WORK        2  // Work timer (one-shot)
@@ -27,7 +28,12 @@ static void rest_log(RestCore *c, const char *fmt, ...) {
     va_list ap;
     if (!c->opts.debug) return;
     va_start(ap, fmt);
-    fprintf(stderr, "[debug] ");
+    char ts[20];
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_s(&tm_now, &now);
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_now);
+    fprintf(stderr, "[%s] [debug] ", ts);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);

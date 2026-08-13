@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 // Core state machine (depends on no view, uses only the GLib main loop and timers)
 struct RestCore {
@@ -23,7 +24,12 @@ static void rest_log(RestCore *c, const char *fmt, ...) {
     va_list ap;
     if (!c->opts.debug) return;
     va_start(ap, fmt);
-    fprintf(stderr, "[debug] ");
+    char ts[20];
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_now);
+    fprintf(stderr, "[%s] [debug] ", ts);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);
