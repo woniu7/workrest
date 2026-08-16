@@ -20,6 +20,7 @@ make                     # linux, gui view (default)
 make PLATFORM=windows    # cross-compile for windows -> rest.exe
 make VIEW=cli            # linux with the cli view
 make VIEW=sdl3           # linux with the SDL3 view
+make VIEW=cli STATIC=1   # linux only: fully static link (musl)
 make clean               # remove the current triple+view only
 make distclean           # remove build/ entirely
 ```
@@ -45,6 +46,26 @@ views — switching `VIEW` can not leave you with the previous view's binary.
   - `sdl3`: SDL3 (>= 3.2), one implementation shared by both platforms. Needs only SDL3
     itself — the digits use SDL's built-in debug font, so there is no SDL_ttf dependency
     and no font file to ship.
+- `BACKEND`: linux only, which main loop drives the core. Defaults from the view, so you
+  normally never set it.
+  - `poll` (default for `cli` / `sdl3`): a `poll()` loop over deadlines on the monotonic
+    clock. **Needs nothing but libc** — `VIEW=cli BACKEND=poll` has no external dependency
+    at all, and `sdl3` is left depending on SDL3 alone.
+  - `glib` (default and mandatory for `gui`): GNOME GLib's `GMainLoop`. GTK4 is built on it
+    and cannot be driven by anything else. Selecting `gui` with `poll` is a build error.
+- `STATIC`: `0` (default) / `1` — linux only, link everything in. Realistic only with
+  `BACKEND=poll` and a musl toolchain: GLib is the one dependency with no usable static
+  build on most distros (nixpkgs ships no `libglib-2.0.a`), which is exactly what the poll
+  backend removes. The output path does not record it, so `make distclean` when switching
+  back to a dynamic build.
+
+Both `EXTRA_CFLAGS` and `EXTRA_LDFLAGS` are appended to the flags the Makefile computes —
+use them rather than setting `CFLAGS` / `LDFLAGS`, which would replace the pkg-config
+results and break the link:
+
+```sh
+make EXTRA_CFLAGS="-O0 -g"
+```
 
 You can also build a platform directly under its dir, e.g. `cd src/linux && make` — it
 writes to the same top-level `build/` as the commands above, not to a second tree.

@@ -38,9 +38,15 @@ endif
 # Every view source but the selected one is dropped from the build
 VIEW_EXCLUDE := $(addsuffix .c,$(filter-out $(VIEW),$(VIEWS)))
 
+# Optional: a platform may offer interchangeable main loop backends as platform-<name>.c and
+# set BACKENDS/BACKEND in its Makefile (linux does; windows has a single platform.c and sets
+# neither, which leaves BACKEND_EXCLUDE empty and changes nothing).
+BACKEND_EXCLUDE := $(addsuffix .c,$(addprefix platform-,$(filter-out $(BACKEND),$(BACKENDS))))
+
 # Sources: common dir (../*.c) + current platform dir (./*.c), minus the unselected view impls
+# and the unselected backends
 COMMON_SRCS := $(filter-out $(VIEW_EXCLUDE),$(notdir $(wildcard $(COMMON_DIR)/*.c)))
-PLAT_SRCS   := $(filter-out $(VIEW_EXCLUDE),$(notdir $(wildcard *.c)))
+PLAT_SRCS   := $(filter-out $(VIEW_EXCLUDE) $(BACKEND_EXCLUDE),$(notdir $(wildcard *.c)))
 SRCS        := $(COMMON_SRCS) $(PLAT_SRCS)
 OBJS        := $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
 DEPS        := $(OBJS:.o=.d)
@@ -88,6 +94,7 @@ info:
 	@echo "Platform:  $(PLATFORM)"
 	@echo "Triple:    $(TRIPLE)"
 	@echo "View:      $(VIEW)"
+	@echo "Backend:   $(or $(BACKEND),-)"
 	@echo "Compiler:  $(CC)"
 	@echo "Build dir: $(BUILD_DIR)"
 	@echo "Sources:   $(SRCS)"

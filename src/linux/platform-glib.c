@@ -1,12 +1,12 @@
-// Platform layer, GLib implementation (see ../platform.h).
+// Main loop backend built on GLib. Required by the gui view: GTK4 is built on GLib and has to
+// be driven by a GMainLoop. Every other view defaults to platform-poll.c, which needs nothing
+// beyond libc -- GLib here is the GNOME utility library, not the C library.
 #include "../platform.h"
+#include "loop.h"
 #include <glib.h>
-#include <time.h>
+#include <glib-unix.h>
 
 static GMainLoop *g_loop = NULL;
-
-static PlatKeyFunc g_key_fn   = NULL;
-static void       *g_key_user = NULL;
 
 // =========================
 // Main loop
@@ -78,36 +78,24 @@ void plat_timer_del(PlatTimer t) {
 }
 
 // =========================
-// Key delivery
+// fd watching (loop.h)
 // =========================
-void plat_set_key_handler(PlatKeyFunc fn, void *user) {
-    g_key_fn   = fn;
-    g_key_user = user;
+typedef struct {
+    LoopFdFunc fn;
+    void      *user;
+} WatchCtx;
+
+static gboolean watch_trampoline(gint fd, GIOCondition condition, gpointer data) {
+    WatchCtx *w = (WatchCtx *)data;
+    (void)fd;
+    if (condition & (G_IO_HUP | G_IO_ERR)) return G_SOURCE_REMOVE;
+    return w->fn(w->user) ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
 }
 
-// Every key source on linux already runs on the main loop thread -- the stdin watch
-// (g_unix_fd_add), the GTK key controller, and the SDL poll driven by a GLib timer -- so
-// this dispatches straight through instead of hopping threads.
-void plat_post_key(char key) {
-    if (g_key_fn) g_key_fn(g_key_user, key);
-}
-
-// =========================
-// Session unlock
-// =========================
-// Not wired up on linux by design: no lock-screen integration here. The hook exists for
-// windows, which does get a session notification.
-void plat_set_unlock_handler(PlatUnlockFunc fn, void *user) {
-    (void)fn;
-    (void)user;
-}
-
-// =========================
-// Misc
-// =========================
-void plat_format_time(char *buf, size_t size) {
-    time_t now = time(NULL);
-    struct tm tm_now;
-    localtime_r(&now, &tm_now);
-    strftime(buf, size, "%Y-%m-%d %H:%M:%S", &tm_now);
+void loop_watch_fd(int fd, LoopFdFunc fn, void *user) {
+    WatchCtx *w = g_new0(WatchCtx, 1);
+    w->fn   = fn;
+    w->user = user;
+    g_unix_fd_add_full(G_PRIORITY_DEFAULT, fd, G_IO_IN | G_IO_HUP | G_IO_ERR,
+                       watch_trampoline, w, g_free);
 }
