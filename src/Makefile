@@ -12,7 +12,7 @@
 PLATFORM ?= linux
 
 # Forward targets to the build under src/<platform>/
-all clean info:
+all clean distclean info:
 	$(MAKE) -C $(PLATFORM) $@
 
-.PHONY: all clean info
+.PHONY: all clean distclean info

@@ -1,7 +1,8 @@
 // CLI view implementation (no GUI): prints the countdown to the terminal as a simulated display.
 // Keyboard listening is separated into keyboard.c and started by the core; this file only handles display.
-#include "../view.h"
-#include "../rest.h"
+// Plain stdio only, so like sdl3.c it is shared by every platform rather than duplicated per platform.
+#include "view.h"
+#include "rest.h"
 #include <stdio.h>
 
 void view_init(RestCore *core) {
