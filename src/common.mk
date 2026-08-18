@@ -51,6 +51,12 @@ SRCS        := $(COMMON_SRCS) $(PLAT_SRCS)
 OBJS        := $(addprefix $(BUILD_DIR)/,$(SRCS:.c=.o))
 DEPS        := $(OBJS:.o=.d)
 
+# Append-only escape hatches. Setting CFLAGS/LDFLAGS on the command line would override the
+# pkg-config results above and break the link; add to these instead, e.g.
+#   make EXTRA_CFLAGS="-O0 -g"
+CFLAGS  += $(EXTRA_CFLAGS)
+LDFLAGS += $(EXTRA_LDFLAGS)
+
 # Let the %.c rule find sources in both the platform dir and the common dir
 vpath %.c . $(COMMON_DIR)
 

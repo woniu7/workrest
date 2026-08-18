@@ -61,10 +61,4 @@ endif
 CFLAGS  ?= -Wall -O2 $(if $(PKGS),$(shell pkg-config $(PKG_STATIC) --cflags $(PKGS)))
 LDFLAGS  = $(STATIC_LDFLAGS) $(if $(PKGS),$(shell pkg-config $(PKG_STATIC) --libs $(PKGS)))
 
-# Append-only escape hatches. Setting CFLAGS/LDFLAGS on the command line would override the
-# pkg-config results above and break the link; add to these instead, e.g.
-#   make EXTRA_CFLAGS="-O0 -g"
-CFLAGS  += $(EXTRA_CFLAGS)
-LDFLAGS += $(EXTRA_LDFLAGS)
-
 include ../common.mk
