@@ -69,3 +69,15 @@ make EXTRA_CFLAGS="-O0 -g"
 
 You can also build a platform directly under its dir, e.g. `cd src/linux && make` — it
 writes to the same top-level `build/` as the commands above, not to a second tree.
+
+## Tests
+
+```sh
+make test                # build and run the core unit tests
+```
+
+The tests exercise the portable state machine (`src/rest.c`) against a mock platform and mock
+view under `test/` — a virtual clock the test advances by hand replaces real timers, so the
+whole work/rest cycle runs in milliseconds with no GUI, no threads, and nothing but a C
+compiler and libc. They cover the work↔rest transitions, the mis-touch key guard, every key
+(`q`/`r`/`c`/`l`/`b`), the session-unlock restart, and timer cleanup on shutdown.

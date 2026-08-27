@@ -16,4 +16,8 @@
 #define DELAY_SECONDS    1    // Keys stay ignored this long after a countdown starts (mis-touch guard)
 #define POSTPONE_SECONDS 120  // Seconds the 'r' key postpones work by
 
+// The 'l' key jams the countdown to this: not infinite, just far enough out (~11.5 days) that
+// the break is effectively postponed until the user resets it.
+#define POSTPONE_LONG_SECONDS 999999
+
 #endif // CONFIG_H

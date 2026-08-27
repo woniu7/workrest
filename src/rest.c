@@ -132,8 +132,8 @@ static void dispatch_key(RestCore *c, char key) {
             break;
         case 'l':
         case 'L':
-            rest_log(c, "Key l: set countdown to 999999");
-            c->remaining_seconds = 999999;
+            rest_log(c, "Key l: set countdown to %d", POSTPONE_LONG_SECONDS);
+            c->remaining_seconds = POSTPONE_LONG_SECONDS;
             notify_tick(c, c->remaining_seconds);
             break;
         case 'b':
